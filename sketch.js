@@ -553,6 +553,7 @@ function getInterpolatedStyle() {
 // setup
 // =====================================================================
 function setup() {
+  pixelDensity(1);
   createCanvas(windowWidth, windowHeight);
   rectMode(CENTER);
   noStroke();
