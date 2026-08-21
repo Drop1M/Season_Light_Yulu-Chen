@@ -200,13 +200,24 @@ const LIGHT_SMOOTH = 0.08;
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  【★ 可调参数 ①】人脸距离 & 画面缩放                            ║
-// ║  用 debug 面板看实际 Box width 数值，对照下面两个像素值校准。      ║
+// ║  换到 27 寸屏幕后，人距摄像头变远了（近约 40~60cm，远约 60~100cm），║
+// ║  下面 FACE_NEAR_PX / FACE_FAR_PX 已按这个距离重新估算，但摄像头   ║
+// ║  型号、视角不同会有偏差，建议按下面步骤现场校准一次：              ║
+// ║  1. 把本文件最下方"DEBUG PANEL"注释块的 /* 和 */ 去掉，刷新页面   ║
+// ║  2. 按键盘 D 键打开调试面板，看 "Box width" 这个数值              ║
+// ║  3. 站在你要求的"近距离"(40cm 左右)，把这个数值填进 FACE_NEAR_PX ║
+// ║  4. 站在"远距离"(100cm 左右)，把这个数值填进 FACE_FAR_PX         ║
+// ║  5. 校准完再把 /* */ 加回去（或者留着也行，只是画面上会多一块字）  ║
 // ╚══════════════════════════════════════════════════════════════════╝
-const FACE_NEAR_PX = 140;    // ← 人脸最近时人脸框的宽度（像素），越大=允许离得更近
-const FACE_FAR_PX  = 75;     // ← 人脸最远时人脸框的宽度（像素），越小=允许离得更远
+const FACE_NEAR_PX = 110;    // ← 人脸最近时人脸框的宽度（像素），越大=允许离得更近（按 40cm 估算，建议用 debug 面板实测校准）
+const FACE_FAR_PX  = 45;     // ← 人脸最远时人脸框的宽度（像素），越小=允许离得更远（按 100cm 估算，建议用 debug 面板实测校准）
 
-const VIEW_SCALE_MIN = 1.0;  // ← 人脸最远时画面缩放倍率（最小）
-const VIEW_SCALE_MAX = 1.4;  // ← 人脸最近时画面缩放倍率（最大），调大=靠近时放大更明显
+// 缩放倍率：数值越大画面看起来越"放大/拉近"。
+// 已按需求调整：放大幅度加大（1.4→1.6），缩小幅度也略微加大（1.0→0.88）。
+// 如果还想让"靠近时放得更大"，只调大 VIEW_SCALE_MAX 这一个数字即可；
+// 如果想让"远离时缩得更小"，只调小 VIEW_SCALE_MIN 这一个数字即可。
+const VIEW_SCALE_MIN = 0.88; // ← 人脸最远时画面缩放倍率（最小，数值越小=远离时画面越小）
+const VIEW_SCALE_MAX = 1.6;  // ← 人脸最近时画面缩放倍率（最大，数值越大=靠近时放得越大）
 const VIEW_SCALE_SMOOTH = 0.035;
 const LOST_FACE_DECAY = 0.02;
 
@@ -232,18 +243,37 @@ const GROWTH_MAX = 1.0;
 // ║  手指在右半边顺时针转，在左半边逆时针转，位置越偏边缘速度越快。    ║
 // ║  SUMMER_ROTATION_SMOOTH : 速度变化平滑度，越小=跟手越跟手越迟缓   ║
 // ║  normalizedX * 0.0007   : 最大转速系数，改那个 0.0007 即可        ║
+// ║                                                                    ║
+// ║  SUMMER_FINGER_RANGE_MARGIN ← 站远了以后要修的就是这个数值！        ║
+// ║  站得远时，手在摄像头画面里能摆动到的范围变窄了（够不到画面最边缘），║
+// ║  导致"最左~最右"原本是按整个画面宽度换算，现在实际能摆到的角度      ║
+// ║  被压缩在画面中间一小段，所以只有中间才转得动。                    ║
+// ║  这个值表示"画面左右各裁掉多大比例，当作手根本够不到的区域"：      ║
+// ║    0 = 用整个画面宽度换算（也就是改之前的效果，边缘要贴到画面边才转）║
+// ║    0.25 = 只用画面中间 50% 的宽度换算，手不用摆太开就能转到最快    ║
+// ║  数值越大=越灵敏（更小的左右摆动就能触发最大转速）；                ║
+// ║  如果实测还是要摆到很靠边才转得动，就把这个数字调大一点。          ║
 // ╚══════════════════════════════════════════════════════════════════╝
-const SUMMER_FINGER_SMOOTH    = 0.25;   // smoothing for index finger position tracking
+const SUMMER_FINGER_SMOOTH    = 0.25;   // ← 手指位置平滑度（0~1，数值越小画面跟随越迟缓）
 const SUMMER_ROTATION_SMOOTH  = 0.06;   // ← 转速变化平滑度（0~1，越大越跟手）
-// max rotation speed is set in updateHandGesture() summer section: summerTargetRotationSpeed = normalizedX * 0.0007
+const SUMMER_FINGER_RANGE_MARGIN = 0.25; // ← 见上方说明：画面左右各裁掉的比例，越大越灵敏
+// 最大转速在 updateHandGesture() 的夏天分支里设置：summerTargetRotationSpeed = normalizedX * 0.0007
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  【★ 可调参数 ⑤】秋天 — 手指风场推力                             ║
 // ║  AUTUMN_WIND_RADIUS : 风场半径，越大=影响范围越广                 ║
 // ║  AUTUMN_WIND_FORCE  : 推力强度，越大=薄片被吹得越远               ║
 // ╚══════════════════════════════════════════════════════════════════╝
-const AUTUMN_WIND_RADIUS = 180;        // ← 风场影响半径（像素）
+const AUTUMN_WIND_RADIUS = 180;        // ← 风场影响半径（像素，会按 autumnSpread() 的缩放比例一起放大）
 const AUTUMN_WIND_FORCE  = 2.2;        // ← 每次检测间隔内的最大推动距离
+const AUTUMN_SPREAD_BASE = 420;        // ← 原始设计基准值（旧的固定方形范围），仅用来算缩放比例，不要改这个
+
+// 秋天薄片的散布范围：横向跟随画布宽度、纵向跟随画布高度，
+// 这样在超宽的 27 寸屏幕上也能左右铺满，而不是挤成中间一块正方形。
+// 0.46 / 0.42 是留白比例，数值越大铺得越满（越接近屏幕边缘）。
+function autumnSpread() {
+  return { x: width * 0.46, y: height * 0.42 };
+}
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  【★ 可调参数 ⑥】冬天 — 风雪强度上升 / 下降速率                  ║
@@ -317,13 +347,13 @@ function summerShape(t, i, time, growth) {
 function autumnShape(t, i, time, growth) {
   const rx = pseudoRandom(i * 12.9898) * 2 - 1;
   const ry = pseudoRandom(i * 78.233) * 2 - 1;
-  const spread = 420;
+  const spr = autumnSpread();
 
   const driftX = sin(time * 0.00012 + i * 0.3) * 18;
   const driftY = cos(time * 0.00009 + i * 0.5) * 14 + sin(time * 0.00015 + i) * 6;
 
-  let x = rx * spread + driftX;
-  let y = ry * spread + driftY;
+  let x = rx * spr.x + driftX;
+  let y = ry * spr.y + driftY;
 
   // wind-blown offset persists after finger moves away — pieces don't snap back
   const offset = autumnDragOffsets[i];
@@ -400,31 +430,34 @@ const SHAPE_FUNCS = [springShape, summerShape, autumnShape, winterShape];
 // =====================================================================
 // season color definitions
 // =====================================================================
+// bg 之前的取值偏色比较明显（比如春/夏偏绿），在部分显示器上会显得
+// 灰蒙蒙发绿而不是纯黑。现在改成三个通道数值很接近（只差 1~2），
+// 看起来就是深黑色，只留一丝丝季节色调的痕迹。
 const SEASONS = [
   {
     name: 'Spring', label: 'Spring · Bloom',
-    bg: [15, 20, 16], body: [235, 250, 235],
+    bg: [6, 7, 6], body: [235, 250, 235],
     glowA: { color: [100, 240, 140], alpha: 0.75, shear: 16, blend: 'screen' },
     glowB: { color: [255, 110, 150], alpha: 0.65, shear: -4, blend: 'screen' },
     motionSpeed: 1.0
   },
   {
     name: 'Summer', label: 'Summer · Energy',
-    bg: [8, 15, 13], body: [235, 250, 255],
+    bg: [5, 7, 6], body: [235, 250, 255],
     glowA: { color: [55, 220, 150], alpha: 0.75, shear: 20, blend: 'screen' },
     glowB: { color: [245, 215, 60], alpha: 0.6, shear: -3, blend: 'screen' },
     motionSpeed: 1.3
   },
   {
     name: 'Autumn', label: 'Autumn · Falling',
-    bg: [16, 11, 8], body: [250, 235, 215],
+    bg: [7, 6, 5], body: [250, 235, 215],
     glowA: { color: [225, 110, 50], alpha: 0.7, shear: 24, blend: 'screen' },
     glowB: { color: [225, 165, 55], alpha: 0.55, shear: -6, blend: 'screen' },
     motionSpeed: 0.8
   },
   {
     name: 'Winter', label: 'Winter · Still',
-    bg: [9, 11, 16], body: [225, 235, 250],
+    bg: [5, 6, 7], body: [225, 235, 250],
     glowA: { color: [130, 180, 245], alpha: 0.6, shear: 10, blend: 'screen' },
     glowB: { color: [220, 230, 245], alpha: 0.4, shear: -2, blend: 'screen' },
     motionSpeed: 0.35
@@ -794,12 +827,17 @@ function updateHandGesture() {
 
     const vw = (video && video.videoWidth) ? video.videoWidth : 320;
 
-    // smooth the position to reduce jitter
+    // 平滑手指位置，减少抖动
     if (summerFingerX === null) summerFingerX = indexTip.x;
     summerFingerX = lerp(summerFingerX, indexTip.x, SUMMER_FINGER_SMOOTH);
 
-    // normalize to -1 (far left) ~ +1 (far right), use distance from center as speed
-    const normalizedX = (summerFingerX / vw) * 2 - 1;
+    // 归一化到 -1（最左）~ +1（最右）。
+    // 用 SUMMER_FINGER_RANGE_MARGIN 裁掉画面左右"手够不到"的区域，
+    // 这样手不用摆到画面最边缘也能触发最大转速（见上方【可调参数④】说明）。
+    // map(..., true) 最后的 true 表示结果会被夹在 -1~1 之间，不会超出范围。
+    const rangeLo = vw * SUMMER_FINGER_RANGE_MARGIN;
+    const rangeHi = vw * (1 - SUMMER_FINGER_RANGE_MARGIN);
+    const normalizedX = map(summerFingerX, rangeLo, rangeHi, -1, 1, true);
     summerTargetRotationSpeed = normalizedX * 0.0007;
     return;
   }
@@ -815,8 +853,9 @@ function updateHandGesture() {
     const nx = (indexTip.x / vw) * 2 - 1;
     const ny = (indexTip.y / vh) * 2 - 1;
 
-    autumnFingerX = nx * 420;
-    autumnFingerY = ny * 420;
+    const fingerSpr = autumnSpread();
+    autumnFingerX = nx * fingerSpr.x;
+    autumnFingerY = ny * fingerSpr.y;
     autumnFingerActive = true;
     return;
   }
@@ -866,11 +905,18 @@ function updateAutumnDrag() {
     if (fingerSpeed >= 0.6) {
       const windStrength = constrain(fingerSpeed, 0, 14) * AUTUMN_WIND_FORCE * 0.12;
 
+      // 散布范围现在跟着屏幕宽高变大了（见上面 autumnSpread()），
+      // 风场半径也按同样比例放大，这样"一次挥手能吹到多大范围"
+      // 的手感和以前固定 420 方形范围时保持一致，不会变得吹不到边。
+      const dragSpr = autumnSpread();
+      const fieldScale = ((dragSpr.x + dragSpr.y) / 2) / AUTUMN_SPREAD_BASE;
+      const effectiveWindRadius = AUTUMN_WIND_RADIUS * fieldScale;
+
       for (let i = 0; i < NUM_PARTICLES; i++) {
         const rx = pseudoRandom(i * 12.9898) * 2 - 1;
         const ry = pseudoRandom(i * 78.233) * 2 - 1;
-        const baseX = rx * 420;
-        const baseY = ry * 420;
+        const baseX = rx * dragSpr.x;
+        const baseY = ry * dragSpr.y;
 
         const currentOffset = autumnDragOffsets[i];
         const currentX = baseX + currentOffset.x;
@@ -880,8 +926,8 @@ function updateAutumnDrag() {
         const dyAway = currentY - autumnFingerY;
         const distToFinger = Math.sqrt(dxAway * dxAway + dyAway * dyAway);
 
-        if (distToFinger < AUTUMN_WIND_RADIUS && distToFinger > 0.01) {
-          const influence = 1 - distToFinger / AUTUMN_WIND_RADIUS;
+        if (distToFinger < effectiveWindRadius && distToFinger > 0.01) {
+          const influence = 1 - distToFinger / effectiveWindRadius;
           const pushAmount = windStrength * influence;
 
           currentOffset.x += (dxAway / distToFinger) * pushAmount;
